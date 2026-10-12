@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Evolera Farmer</title>
+<style>
+:root{--bg:#0d1117;--pn:#161b22;--bd:#30363d;--tx:#e6edf3;--dim:#8b949e;--ok:#3fb950;--bad:#f85149;--wr:#d29922;--ac:#58a6ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+.wrap{max-width:1100px;margin:0 auto;padding:14px}
+h1{font-size:15px;margin:0 0 10px}
+.bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+button{font:inherit;padding:8px 14px;border-radius:6px;border:1px solid var(--bd);background:var(--pn);color:var(--tx);cursor:pointer}
+button:hover{border-color:#8b949e}
+button.go{background:#1f6feb;border-color:#1f6feb}
+button.stop{background:#8b1d1d;border-color:#8b1d1d}
+button:disabled{opacity:.4;cursor:default}
+input,select,textarea{font:inherit;background:var(--pn);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:6px 8px}
+textarea{width:100%;height:110px;resize:vertical}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:860px){.grid{grid-template-columns:1fr}}
+.card{background:var(--pn);border:1px solid var(--bd);border-radius:8px;padding:12px;margin-bottom:12px}
+.card h2{font-size:12px;margin:0 0 8px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:12px}
+.kv b{color:var(--dim);font-weight:400}
+#log{height:300px;overflow:auto;background:#010409;border:1px solid var(--bd);border-radius:6px;padding:8px;font-size:12px;white-space:pre-wrap}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#8b949e;margin-right:6px}
+.dot.on{background:var(--ok)}.dot.err{background:var(--bad)}.dot.warn{background:var(--wr)}
+.warn{background:#2d2213;border:1px solid #5c4517;color:#e3b341;padding:8px 10px;border-radius:6px;font-size:12px;margin-bottom:12px}
+.err{color:var(--bad)}.ok{color:var(--ok)}.dim{color:var(--dim)}
+.big{font-size:18px;font-weight:600}
+#opts label{display:flex;gap:5px;align-items:center;font-size:12px;color:var(--dim);white-space:nowrap}
+#opts input{accent-color:#1f6feb}
+#opts{border-top:1px solid var(--bd);padding-top:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Evolera Farmer <span class="dim" style="font-weight:400">— bot jalan di browser kamu</span></h1>
+<div class="warn">
+Jalanin cuma dari <b>IP rumah/laptop sendiri</b>. 1 wallet per IP — jangan buka 2 tab buat 2 wallet sekaligus.
+Private key diketik di sini cuma disimpan di <b>localStorage laptop kamu</b>, nggak dikirim ke mana-mana selain tanda tangan login ke evolera.world.
+</div>
+
+<div class="card">
+  <h2>1. Roster wallet</h2>
+  <textarea id="roster" placeholder="tempel private key di sini, satu per baris (0x...)"></textarea>
+  <div class="bar" style="margin:8px 0 0">
+    <button onclick="saveRoster()">Simpan roster</button>
+    <button onclick="clearRoster()">Hapus</button>
+    <span id="rosterInfo" class="dim"></span>
+  </div>
+</div>
+
+<div class="card">
+  <h2>2. Jalankan</h2>
+  <div class="bar">
+    <span class="dot" id="dot"></span><span id="stateTxt" class="dim">idle</span>
+    <span style="flex:1"></span>
+    <select id="walletSel"></select>
+    <input id="pname" style="width:130px" placeholder="nama karakter" title="nama karakter in-game">
+    <input id="world" value="gloom" style="width:110px" title="world">
+    <button class="go" id="startBtn" onclick="start()">Start</button>
+    <button class="stop" id="stopBtn" onclick="stop()" disabled>Stop</button>
+  </div>
+  <div class="bar" id="cfgBar"><span class="dim">cek config…</span></div>
+  <div class="bar" id="opts">
+    <label><input type="checkbox" id="optChest" checked> chest gratis tiap cooldown</label>
+    <label><input type="checkbox" id="optDaily" checked> wheel + daily claim</label>
+    <label><input type="checkbox" id="optRich" checked> target mob paling mahal</label>
+    <label><input type="checkbox" id="optHoard" checked> tahan gold 2.000 dulu (achievement +300)</label>
+    <label><input type="checkbox" id="optRotate" checked> rotasi world tiap 15 mnt (achievement +1.050)</label>
+    <span class="dim" id="rotInfo"></span>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Status</h2>
+    <div class="kv">
+      <b>wallet</b><span id="sWal">–</span>
+      <b>world/room</b><span id="sRoom">–</span>
+      <b>level</b><span id="sLvl">–</span>
+      <b>hp</b><span id="sHp">–</span>
+      <b>gold</b><span id="sGold">–</span>
+      <b>sold</b><span id="sSold">–</span>
+      <b>EVO dapet</b><span id="sEvo" class="ok">–</span>
+      <b>pos</b><span id="sPos">–</span>
+      <b>mobs/coins</b><span id="sMobs">–</span>
+      <b>uptime</b><span id="sUp">–</span>
+    </div>
+    <div class="bar" style="margin:10px 0 0">
+      <span class="big ok" id="evoBig">0 EVO</span>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Log</h2>
+    <div id="log"></div>
+  </div>
+</div>
+</div>
+
+<script src="./ethers.umd.min.js"></script>
+<script type="module">
+// colyseus.js: dist/colyseus.js butuh Node Buffer -> pakai build ESM dari CDN, ada fallback
+const CDNS = [
+  "https://cdn.jsdelivr.net/npm/colyseus.js@0.15.28/+esm",
+  "https://esm.sh/colyseus.js@0.15.28",
+  "https://cdn.skypack.dev/colyseus.js@0.15.28"
+];
+window.__colyseusP = (async () => {
+  let err = "";
+  for (const u of CDNS) {
+    try {
+      const m = await import(u);
+      const C = m.Client || (m.default && m.default.Client);
+      if (typeof C === "function") { window.Colyseus = Object.assign({}, m, { Client: C }); return C; }
+    } catch (e) { err += u + ": " + e.message + " | "; }
+  }
+  throw new Error("gagal load colyseus dari CDN — " + err);
+})();
+</script>
+<script>
+const B = "https://evolera.world";
+const DEF = { SELLMIN: 500, CHUNK: 500, CAP: 30000, CD: 300, RANGE: 7.0, PICK: 2.2, HOMERAD: 60 };
+let RATE = 15, GATE = 5000, EXCH = null, MINLVL = 5;
+let keys = [], walletN = 1;
+let room = null, running = false, tok = null;
+let S = { gold: 0, sold: 0, evo: 0, level: 0, hp: 0, maxhp: 0, coins: 0, pos: "", state: "idle" };
+let lastAtk = 0, lastMove = 0, lastPick = 0, gold = 0, soldTotal = 0, selling = false, sellCool = 0,
+    sellSentAt = 0, sellFails = 0, exchOpen = null, inv = null, equipped = {};
+let sid = null, anchor = null, bl = {}, obsId = null, obsHp = -1, obsT = 0;
+let lastPos = null, stillT = 0, unstickUntil = 0, unstickDir = 0, lastUnstick = 0, claimT = 0, wasDead = false;
+let afkUntil = 0, lastGoldT = Date.now(), lastGold = 0, relocUntil = 0, relocDir = 0, lastReloc = 0;
+let lootBl = {}, lastLootKey = null, lootT0 = 0, lootD0 = 1e9, uptime0 = 0, tickTimer = null, cfgTimer = null, reconnects = 0, warnedLvl = false;
+// peringkat gold per kill dari tabel mob game (bundle): gold/hp hampir rata -> DPS yang nentuin,
+// tapi mob mahal = 1 coin gede, hemat waktu jalan ambil coin
+const MOB_GOLD = { wyrm:45, colossus:44, leviathan:42, drake:22, ghoul:21, magma:19, yeti:16, sandworm:16,
+  troll:13, naga:13, whelp:10, wraith:9, lavahound:8, scorpion:7.5, crab:6.5, frostwolf:6.5, goblin:5.5, boar:4, rat:2.5 };
+const ROT_WORLDS = ["gloom", "dust", "tide", "ember"];   // semua coins:true, tanpa gate material
+let chestNext = 0, chestSends = 0, lastDaily = 0, hoardDone = false, rotIdx = 0, rotT = 0, seenKinds = {};
+const opt = (id) => $(id).checked;
+const RICH = () => opt("optRich");
+const rnd = (a, b) => a + Math.random() * (b - a);
+const $ = (id) => document.getElementById(id);
+const ts = () => new Date().toISOString().slice(11, 19);
+function L(s, cls) {
+  const el = $("log");
+  el.innerHTML += (cls ? `<span class="${cls}">` : "") + `[${ts()}] ` + String(s).replace(/</g, "&lt;") + (cls ? "</span>" : "") + "\n";
+  el.scrollTop = el.scrollHeight;
+  if (el.innerHTML.length > 400000) el.textContent = el.textContent.slice(-200000);
+}
+function setState(t, cls) { $("stateTxt").textContent = t; $("stateTxt").className = cls || "dim"; $("dot").className = "dot " + (cls === "ok" ? "on" : cls === "err" ? "err" : cls === "warn" ? "warn" : ""); }
+
+/* ---------- roster ---------- */
+function saveRoster() {
+  const raw = $("roster").value.split(/\s+/).map(s => s.trim()).filter(Boolean);
+  const good = [], bad = [];
+  for (const k of raw) {
+    try { const w = new ethers.Wallet(k); if (w.address) good.push(w.privateKey); } catch { bad.push(k.slice(0, 12) + "…"); }
+  }
+  keys = good;
+  localStorage.setItem("evolera_keys", JSON.stringify(keys));
+  renderRoster();
+  L(`roster: ${good.length} key valid${bad.length ? ", " + bad.length + " gagal: " + bad.join(" ") : ""}`, bad.length ? "err" : "ok");
+}
+function clearRoster() { keys = []; localStorage.removeItem("evolera_keys"); $("roster").value = ""; renderRoster(); L("roster dihapus", "warn"); }
+function renderRoster() {
+  const sel = $("walletSel");
+  sel.innerHTML = keys.map((k, i) => {
+    let a = "?"; try { a = new ethers.Wallet(k).address; } catch { }
+    return `<option value="${i + 1}">wallet ${i + 1} · ${a.slice(0, 6)}…${a.slice(-4)}</option>`;
+  }).join("");
+  $("rosterInfo").textContent = keys.length ? `${keys.length} wallet · aktif: wallet ${walletN}` : "belum ada key";
+}
+function loadRoster() {
+  try { keys = JSON.parse(localStorage.getItem("evolera_keys") || "[]"); } catch { keys = []; }
+  renderRoster();
+  if (keys.length) L("roster dimuat dari localStorage: " + keys.length + " wallet", "dim");
+}
+
+/* ---------- config ---------- */
+async function loadCfg() {
+  try {
+    const j = await (await fetch(B + "/auth/config")).json();
+    if (j.token) {
+      RATE = j.token.perGold ?? RATE; GATE = j.token.gateMin ?? GATE;
+      EXCH = j.token.exchangeOpen === true; exchOpen = EXCH;
+      if (j.token.limits && j.token.limits.minLevel != null) MINLVL = j.token.limits.minLevel;
+    }
+    $("cfgBar").innerHTML = `rate <b>${RATE} EVO/gold</b> · gate <b>${GATE} EVO</b> · min level jual <b>${MINLVL}</b> · exchange ` +
+      (EXCH ? `<span class="ok">OPEN</span>` : `<span class="err">CLOSED</span>`) +
+      ` · 500 gold ≈ <b>${(500 * RATE).toLocaleString()} EVO</b>`;
+  } catch (e) { $("cfgBar").innerHTML = `<span class="err">config gagal: ${e.message}</span>`; }
+}
+
+/* ---------- login (SIWE, ditandatangani di browser) ---------- */
+async function siwe(pk) {
+  const w = new ethers.Wallet(pk);
+  const r = await (await fetch(`${B}/auth/nonce?address=${w.address}`)).json();
+  const iat = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  const msg = `evolera.world wants you to sign in with your Ethereum account:\n${w.address}\n\n` +
+    `${r.statement || "Sign in to EVOLERA."}\n\nURI: https://evolera.world\nVersion: 1\nChain ID: ${r.chainId || 4663}\nNonce: ${r.nonce}\nIssued At: ${iat}`;
+  const sig = await w.signMessage(msg);
+  const j = await (await fetch(B + "/auth/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: msg, signature: sig }) })).json();
+  if (!j.token) throw new Error("login gagal: " + JSON.stringify(j).slice(0, 120));
+  return { token: j.token, address: w.address, username: j.username };
+}
+
+/* ---------- bot ---------- */
+function equipBest() {
+  if (!inv || !inv.inventory) return;
+  const W = ["weapon", "rod", "bow"], A = ["armor", "helmet", "cape"];
+  let bW = null, bWv = -1, bA = null, bAv = -1;
+  inv.inventory.forEach(it => {
+    if (!it || it.uid == null) return;
+    if (W.includes(it.slot)) { const v = it.atk || 0; if (v > bWv) { bWv = v; bW = it; } }
+    if (A.includes(it.slot)) { const v = it.def || 0; if (v > bAv) { bAv = v; bA = it; } }
+  });
+  try {
+    if (bW && equipped.weapon !== bW.uid) { room.send("selectWeapon", { uid: bW.uid }); equipped.weapon = bW.uid; L("EQUIP weapon " + bW.name, "dim"); }
+    if (bA && equipped[bA.slot] !== bA.uid) { room.send("equip", { uid: bA.uid }); equipped[bA.slot] = bA.uid; L("EQUIP " + bA.slot + " " + bA.name, "dim"); }
+  } catch (e) { L("equipErr " + e.message, "err"); }
+}
+function gatherLoot(st) {
+  const out = [];
+  if (st.coins) st.coins.forEach(c => { if (c && typeof c.x === "number") out.push({ x: c.x, z: c.z, v: c.value || 0, t: "coin" }); });
+  if (st.drops) st.drops.forEach(d => { if (d && typeof d.x === "number") out.push({ x: d.x, z: d.z, t: "item" }); });
+  return out;
+}
+function hook(r) {
+  room = r; sid = r.sessionId; anchor = null; bl = {}; obsId = null;
+  r.onMessage("inv", m => { inv = m; if (typeof m.gold === "number") { gold = m.gold; S.gold = gold; } equipBest(); });
+  r.onMessage("exchange_msg", m => {
+    if (m && m.ok && m.txHash && !m.pending) {
+      const amt = S._pend || 0; soldTotal += amt; S.sold = soldTotal; S.evo += amt * RATE; selling = false;
+      sellFails = 0; sellCool = Date.now() + rnd(15000, 45000); S.state = soldTotal >= DEF.CAP ? "CAP_REACHED" : "farming";
+      L(`XCHG OK +${amt}g → ${amt * RATE} EVO  tx=${m.txHash}`, "ok");
+    } else if (m && m.pending) { L("XCHG pending", "dim"); }
+    else if (m && !m.ok) {
+      selling = false; S._pend = 0; sellFails++;
+      const txt = (m.text || JSON.stringify(m)).slice(0, 140);
+      sellCool = Date.now() + (sellFails > 3 ? 600000 : rnd(90000, 180000));
+      L("XCHG FAIL " + txt, "err");
+      if (/ban|block|suspend/i.test(txt)) { S.state = "BANNED"; stop(); }
+    }
+  });
+  r.onMessage("dailyState", m => { if (m && !m.claimedToday && Date.now() - claimT > 20000) { claimT = Date.now(); r.send("dailyClaim", {}); } });
+  r.onMessage("chestState", m => { if (m && m.nextMs != null) chestNext = Date.now() + Math.max(0, m.nextMs - 1500); });
+  r.onMessage("chestResult", m => {
+    if (m && m.nextMs != null) chestNext = Date.now() + Math.max(0, m.nextMs - 1500);
+    if (m && m.ok) L("CHEST 🎁 " + ((m.item && m.item.name) || "item"), "ok");
+    else if (m && m.reason && !/cooldown|wait|not ready/i.test(m.reason)) L("chest: " + m.reason, "dim");
+  });
+  r.onStateChange(st => { const me = st.players.get(sid); if (me) { S.level = me.level; S.hp = Math.round(me.hp); S.maxhp = me.maxhp; } });
+  r.onError((c, m) => {
+    L("ROOMERR " + c + " " + m, "err");
+    if (c === 4216 || /ban/i.test(String(m))) {
+      S.state = "BANNED";
+      if (!/ban/i.test(String(m))) L("code 4216 = wallet kurang dari " + GATE + " EVO (gate), bukan ban", "warn");
+      stop();
+    }
+  });
+  r.onLeave(c => {
+    const m = c === 4001 ? "akun ini login di tab lain — tutup tab lainnya (4001)" : c === 4003 ? "BANNED oleh server (4003)" : "code " + c;
+    L("LEAVE " + m, c === 4001 || c === 4003 ? "err" : "warn");
+    if (c === 4001 || c === 4003) { S.state = "BANNED"; stop(); return; }
+    if (running) room = null;
+  });
+}
+async function connect() {
+  const C = await window.__colyseusP;
+  const c = new C("wss://evolera.world");
+  const world = $("world").value.trim() || "gloom";
+  const r = await c.create(world, { name: $("pname").value.trim() || "wanderer", vocation: "paladin", auth: tok.token, spectator: false });
+  hook(r); S.state = "farming";
+  seenKinds = {}; rotT = Date.now();
+  $("sRoom").textContent = world + " · " + r.roomId + " · " + r.sessionId;
+  L(`JOINED world=${world} room=${r.roomId} as ${tok.username || tok.address}`, "ok");
+}
+function move(dx, dz, now) { if (now - lastMove > rnd(220, 380)) { room.send("input", { dx: +dx.toFixed(2), dz: +dz.toFixed(2) }); lastMove = now; } }
+function tick() {
+  const now = Date.now();
+  try {
+    if (!room) return;
+    if (now < afkUntil) return;
+    if (Math.random() < 0.0015) { afkUntil = now + rnd(3000, 9000); L("AFK " + ((afkUntil - now) / 1000 | 0) + "s", "dim"); return; }
+    const st = room.state, me = st.players.get(sid);
+    if (!me) return;
+    if (!anchor) anchor = { x: me.x, z: me.z };
+    const mobs = []; if (st.monsters) st.monsters.forEach((m, k) => { if (m.alive && m.kind !== "exchanger") mobs.push([k, m]); });
+    mobs.forEach(([, m]) => { seenKinds[m.kind] = (seenKinds[m.kind] || 0) + 1; });
+    const loot = gatherLoot(st);
+    const ncoin = loot.filter(l => l.t === "coin").length;
+    S.pos = me.x.toFixed(1) + "," + me.z.toFixed(1); S.coins = ncoin;
+    if (gold !== lastGold) { lastGold = gold; lastGoldT = now; }
+    // sell: bertahap 500 gold
+    if (selling && now - sellSentAt > 45000) { selling = false; L("SELL timeout → retry", "warn"); }
+    if (!warnedLvl && gold >= DEF.SELLMIN && S.level < MINLVL) {
+      warnedLvl = true;
+      L(`BELUM BISA JUAL: level ${S.level} < ${MINLVL} (syarat server). Gold tetap numpuk, nanti kejual sendiri begitu level ${MINLVL}.`, "warn");
+    }
+    if (!selling && gold >= DEF.SELLMIN && soldTotal < DEF.CAP && now > sellCool && exchOpen !== false) {
+      if (opt("optHoard") && !hoardDone && gold >= 2000) { hoardDone = true; L("HOARDER ✔ gold 2.000 keliwat → achievement +300 gold, lanjut jual", "ok"); }
+      if (opt("optHoard") && !hoardDone) { /* tahan dulu sampe 2.000 */ }
+      else {
+      const amt = Math.min(DEF.CHUNK, DEF.CAP - soldTotal, gold);
+      if (amt >= 100) { selling = true; sellSentAt = now; S._pend = amt; S.state = "selling"; L("SELL " + amt + " (punya " + gold + ")"); room.send("xSell", { gold: amt }); }
+      }
+    }
+    if (opt("optChest") && now > chestNext) { chestNext = now + 25000; chestSends++; try { room.send("chestOpen", {}); } catch (e) { } }
+    if (me.dead) { if (!wasDead) { wasDead = true; S.state = "dead"; L("DEAD", "err"); } return; }
+    if (wasDead) { wasDead = false; S.state = "farming"; L("RESPAWNED", "ok"); anchor = { x: me.x, z: me.z }; }
+    if (lastPos) { if (Math.hypot(me.x - lastPos.x, me.z - lastPos.z) < 0.05) stillT += 200; else stillT = 0; }
+    lastPos = { x: me.x, z: me.z };
+    if (now < unstickUntil) { move(Math.cos(unstickDir), Math.sin(unstickDir), now); return; }
+    if (now - lastGoldT > 45000 && now - lastReloc > 90000) {
+      lastReloc = now; relocUntil = now + 6000; relocDir = Math.random() * 2 * Math.PI;
+      lootBl = {}; bl = {}; lastLootKey = null; anchor = { x: me.x, z: me.z }; lastGoldT = now;
+      L("RELOCATE dir=" + (relocDir * 57.3).toFixed(0), "dim");
+    }
+    if (now < relocUntil) { if (now - lastMove > 1500) room.send("jump", {}); move(Math.cos(relocDir), Math.sin(relocDir), now); return; }
+    let nl = 1e9, lt = null;
+    for (const l of loot) {
+      const lk = Math.round(l.x / 2) + "," + Math.round(l.z / 2); if (lootBl[lk] && lootBl[lk] > now) continue;
+      const d = Math.hypot(l.x - me.x, l.z - me.z); if (d < nl) { nl = d; lt = l; }
+    }
+    let best = null, bd = 1e9;
+    for (const [k, m] of mobs) {
+      if (bl[k] && bl[k] > now) continue;
+      const d = Math.hypot(m.x - me.x, m.z - me.z);
+      if (!RICH()) { if (d < bd) { bd = d; best = [k, m]; } }
+      else {
+        // hargai mob mahal, tetap hukum kalau jauh: gold per kill / (1 + 0.05*d)
+        const sc = (MOB_GOLD[m.kind] || 5) / (1 + d * 0.05);
+        if (!best || sc > best[2]) { bd = d; best = [k, m, sc]; }
+      }
+    }
+    if (RICH() && best) best = [best[0], best[1]];
+    if (!best) { let b2 = null, d2 = 1e9; for (const [k, m] of mobs) { const d = Math.hypot(m.x - me.x, m.z - me.z); if (d < d2) { d2 = d; b2 = [k, m]; } } best = b2; bd = d2; }
+    const busyShoot = t => { if (t && now - lastAtk > rnd(DEF.CD, DEF.CD + 220)) { room.send("attack", { id: t[0] }); lastAtk = now; } };
+    if (lt && nl <= DEF.PICK) { if (now - lastPick > rnd(260, 420)) { room.send("pickUp", {}); lastPick = now; } stillT = 0; return; }
+    if (lt && nl < 5.0) {
+      if (best && bd <= DEF.RANGE) busyShoot(best);
+      const lk = Math.round(lt.x / 2) + "," + Math.round(lt.z / 2);
+      if (lastLootKey !== lk) { lastLootKey = lk; lootT0 = now; lootD0 = nl; }
+      if (nl < lootD0 - 0.4) { lootD0 = nl; lootT0 = now; }
+      else if (now - lootT0 > 6000) { lootBl[lk] = now + 60000; lastLootKey = null; room.send("jump", {}); return; }
+      if (stillT > 1600 && now - lastUnstick > 2600) { lastUnstick = now; unstickUntil = now + 700; unstickDir = Math.random() * 2 * Math.PI; stillT = 0; return; }
+      move((lt.x - me.x) / Math.max(nl, .01), (lt.z - me.z) / Math.max(nl, .01), now); return;
+    }
+    if (best && bd <= DEF.RANGE) {
+      stillT = 0; room.send("stop", {});
+      if (now - lastAtk > rnd(DEF.CD, DEF.CD + 220)) { room.send("attack", { id: best[0] }); lastAtk = now; }
+      const m = best[1];
+      if (obsId !== best[0]) { obsId = best[0]; obsHp = m.hp; obsT = now; }
+      else if (m.hp < obsHp) { obsHp = m.hp; obsT = now; }
+      else if (now - obsT > 7000) { bl[best[0]] = now + 15000; obsId = null; }
+      return;
+    }
+    if (lt && nl < 25) {
+      if (stillT > 1600 && now - lastUnstick > 2600) { lastUnstick = now; unstickUntil = now + 700; unstickDir = Math.random() * 2 * Math.PI; stillT = 0; return; }
+      if (best && bd <= DEF.RANGE) busyShoot(best);
+      move((lt.x - me.x) / nl, (lt.z - me.z) / nl, now); return;
+    }
+    if (best) {
+      if (obsId === best[0]) obsId = null;
+      const id = best[0], m = best[1];
+      if (stillT > 1600 && now - lastUnstick > 2600) { lastUnstick = now; unstickUntil = now + 700; unstickDir = Math.random() * 2 * Math.PI; stillT = 0; bl[id] = now + 5000; return; }
+      move((m.x - me.x) / bd, (m.z - me.z) / bd, now);
+      const key = "__d" + id;
+      if (!bl[key]) bl[key] = [now, bd];
+      else { const t0 = bl[key][0], d0 = bl[key][1]; if (bd > d0 - 0.8) { if (now - t0 > 5000) { bl[id] = now + 20000; delete bl[key]; } } else bl[key] = [now, bd]; }
+      return;
+    }
+    const dh = Math.hypot(me.x - anchor.x, me.z - anchor.z);
+    let a = (now / rnd(4500, 6500)) % (2 * Math.PI);
+    if (dh > DEF.HOMERAD) a = Math.atan2(anchor.z - me.z, anchor.x - me.x);
+    move(Math.cos(a), Math.sin(a), now);
+  } catch (e) { L("TICKERR " + e.message, "err"); }
+}
+function paint() {
+  const kinds = Object.entries(seenKinds).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, c]) => k + "×" + c).join(" ");
+  const mins = uptime0 ? (Date.now() - uptime0) / 60000 : 0;
+  const perH = mins > 1 ? Math.round(S.evo / (mins / 60)) : 0;
+  $("rotInfo").textContent = room ? `world ${$("world").value} | mob: ${kinds} | EVO/jam ≈ ${perH.toLocaleString()}${opt("optHoard") && !hoardDone ? " | nahan gold sampe 2.000" : ""}${chestSends ? " | chest×" + chestSends : ""}` : "";
+  if (running && opt("optRotate") && rotT && Date.now() - rotT > 15 * 60000) rotateWorld();
+  $("sWal").textContent = tok ? `wallet ${walletN} · ${tok.address}` : "–";
+  $("sLvl").textContent = S.level; $("sHp").textContent = S.hp + "/" + S.maxhp;
+  $("sGold").textContent = gold; $("sSold").textContent = soldTotal;
+  $("sEvo").textContent = S.evo.toLocaleString(); $("sEvo").className = "ok";
+  $("sPos").textContent = S.pos; $("sMobs").textContent = S.coins;
+  $("sUp").textContent = uptime0 ? ((Date.now() - uptime0) / 60000).toFixed(1) + " m" : "–";
+  $("evoBig").textContent = S.evo.toLocaleString() + " EVO";
+  paint._n = (paint._n || 0) + 1;
+  if (paint._n % 15 === 0 && room) L(`ST gold=${gold} sold=${soldTotal} lvl=${S.level} hp=${S.hp}/${S.maxhp} pos=${S.pos} coins=${S.coins} state=${S.state}`, "dim");
+}
+async function start() {
+  if (running) return;
+  if (!keys.length) { L("roster kosong — tempel private key dulu", "err"); return; }
+  walletN = +$("walletSel").value;
+  $("startBtn").disabled = true; $("stopBtn").disabled = false; running = true;
+  warnedLvl = false; soldTotal = 0;
+  setState("login…", "warn");
+  try {
+    await loadCfg();
+    tok = await siwe(keys[walletN - 1]);
+    L(`login OK wallet ${walletN} ${tok.address}`, "ok");
+    try {
+      const pt = await (await fetch(B + "/player/token", { headers: { authorization: "Bearer " + tok.token } })).json();
+      const bal = Number(pt.balance ?? 0);
+      L(`wallet ${walletN}: ${bal.toLocaleString()} EVO (gate ${GATE}) → ` + (pt.gateOk ? "lolos gate" : `KURANG ${(GATE - bal).toLocaleString()} EVO, nggak bisa masuk`), pt.gateOk ? "ok" : "err");
+    } catch (e) { L("cek saldo gagal: " + e.message, "warn"); }
+    setState("connect…", "warn");
+    await connect();
+    uptime0 = Date.now(); reconnects = 0;
+    setState("farming", "ok");
+    clearInterval(tickTimer); tickTimer = setInterval(tick, 200);
+    clearInterval(paintTimer); paintTimer = setInterval(paint, 1000);
+    clearInterval(cfgTimer); cfgTimer = setInterval(loadCfg, 60000);
+    clearInterval(reconTimer); reconTimer = setInterval(reconnectCheck, 20000);
+    hoardDone = false; chestNext = 0; chestSends = 0;
+    rotIdx = Math.max(0, ROT_WORLDS.indexOf($("world").value.trim()));
+    if (opt("optDaily")) { try { room.send("wheelSpin", {}); try { room.send("dailyClaim", {}); } catch (e) { } L("wheel + daily claim dikirim", "dim"); } catch (e) { } }
+    L(`opsi: chest=${opt("optChest")} daily=${opt("optDaily")} mobMahal=${opt("optRich")} hoard=${opt("optHoard")} rotasi=${opt("optRotate")}`, "dim");
+  } catch (e) {
+    L("START GAGAL: " + (e && e.message || e), "err");
+    setState("gagal", "err"); await stop();
+  }
+}
+function reconnectCheck() {
+  if (!running) return;
+  try { if (room && room.connection && room.connection.isOpen === false) { L("conn closed", "warn"); room = null; } } catch { }
+  if (!room) {
+    reconnects++;
+    if (reconnects > 12) { L("kebanyakan reconnect → stop", "err"); stop(); return; }
+    L("reconnect #" + reconnects, "warn");
+    connect().catch(e => L("RECONNECT FAIL " + e.message, "err"));
+  }
+}
+async function rotateWorld() {
+  rotIdx = (rotIdx + 1) % ROT_WORLDS.length;
+  const w = ROT_WORLDS[rotIdx];
+  $("world").value = w;
+  L(`ROTASI WORLD → ${w} (kejar visit_* + world hunter: +1.050 gold satu kali)`, "warn");
+  const old = room; room = null;
+  try { if (old) await old.leave(); } catch { }
+  try { await connect(); L("rotasi OK, farming di " + w, "ok"); }
+  catch (e) { L("rotasi gagal: " + e.message + " (balik ke world sebelumnya)", "err"); $("world").value = ROT_WORLDS[(rotIdx - 1 + ROT_WORLDS.length) % ROT_WORLDS.length]; try { await connect(); } catch { } }
+}
+async function stop() {
+  running = false;
+  clearInterval(tickTimer); clearInterval(paintTimer); clearInterval(cfgTimer); clearInterval(reconTimer);
+  try { if (room) await room.leave(); } catch { }
+  room = null; setState(S.state === "BANNED" ? "banned" : "idle", S.state === "BANNED" ? "err" : "dim");
+  $("startBtn").disabled = false; $("stopBtn").disabled = true;
+  L("STOP (total " + soldTotal + "g → " + S.evo.toLocaleString() + " EVO)", "warn");
+}
+let paintTimer = null, reconTimer = null;
+const NM_POOL = ["Grimlok","Sylvara","Thornbeard","Nixie","Ragnvald","Belwick","Sorrel","Kaelthas","Bramble","Duskril","Fenwick","Aurelia","Merrow","Talon","Vesper","Corvin","Elspeth","Haldir","Rowan","Zephyra"];
+$("pname").value = NM_POOL[Math.floor(Math.random() * NM_POOL.length)];
+loadRoster(); renderRoster(); loadCfg();
+window.onerror = (m, s, l, c) => L("JSERR " + m + " @" + l + ":" + c, "err");
+</script>
+</body>
+</html>
